@@ -1,0 +1,325 @@
+openapi: 3.0.3
+info:
+  title: Magic Transporters API
+  description: API for Magic Movers and Magic Items
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local
+
+paths:
+
+  /movers/leaderboard:
+    get:
+      summary: Movers leaderboard
+      description: List who completed the most missions, descending by completed missions count. Paginated.
+      operationId: getMoversLeaderboard
+      tags:
+        - movers
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paginated leaderboard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /movers:
+    post:
+      summary: Create a Magic Mover
+      operationId: createMover
+      tags:
+        - movers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMoverInput'
+      responses:
+        '201':
+          description: Mover created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoverOutput'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /items:
+    post:
+      summary: Create a Magic Item
+      operationId: createItem
+      tags:
+        - items
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateItemInput'
+      responses:
+        '201':
+          description: Item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemOutput'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /missions:
+    post:
+      summary: Load items onto a mover
+      description: Mover must be in resting state. Total weight must not exceed mover limit.
+      operationId: loadMoverItems
+      tags:
+        - missions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoadMoverInput'
+      responses:
+        '200':
+          description: Items loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoverOutput'
+        '400':
+          description: Bad request (mover not resting, weight exceeded)
+        '422':
+          description: Validation error
+
+  /missions/{moverId}/start:
+    patch:
+      summary: Start mission
+      description: Change mover from loading to on-mission. Prevents loading more items.
+      operationId: startMission
+      tags:
+        - missions
+      parameters:
+        - name: moverId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ObjectId'
+      responses:
+        '200':
+          description: Mission started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoverOutput'
+        '400':
+          description: Bad request (mover not in loading state)
+
+  /missions/{moverId}/end:
+    patch:
+      summary: End mission
+      description: Change mover to resting. Unloads all items.
+      operationId: endMission
+      tags:
+        - missions
+      parameters:
+        - name: moverId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ObjectId'
+      responses:
+        '200':
+          description: Mission ended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoverOutput'
+        '400':
+          description: Bad request
+
+components:
+  schemas:
+    ObjectId:
+      type: string
+      pattern: '^[a-fA-F0-9]{24}$'
+      description: MongoDB ObjectId (24 hex characters)
+
+    QuestState:
+      type: string
+      enum:
+        - resting
+        - loading
+        - on-mission
+
+    CreateMoverInput:
+      type: object
+      required:
+        - weightLimit
+      properties:
+        weightLimit:
+          type: number
+          minimum: 0.01
+          description: Maximum weight the mover can carry
+        questState:
+          $ref: '#/components/schemas/QuestState'
+          default: resting
+
+    MoverOutput:
+      type: object
+      description: Mover output (matches moverOutputSchema)
+      properties:
+        id:
+          $ref: '#/components/schemas/ObjectId'
+        weightLimit:
+          type: number
+        questState:
+          $ref: '#/components/schemas/QuestState'
+        currentItemIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectId'
+        currentItems:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ItemOutput'
+          description: Populated when mover is returned with loaded items
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateItemInput:
+      type: object
+      required:
+        - name
+        - weight
+      properties:
+        name:
+          type: string
+          minLength: 1
+        weight:
+          type: number
+          minimum: 0.01
+
+    ItemOutput:
+      type: object
+      description: Item output (matches itemOutputSchema)
+      properties:
+        id:
+          $ref: '#/components/schemas/ObjectId'
+        name:
+          type: string
+        weight:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    LoadMoverInput:
+      type: object
+      required:
+        - moverId
+        - itemIds
+      properties:
+        moverId:
+          $ref: '#/components/schemas/ObjectId'
+        itemIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectId'
+          minItems: 1
+
+    MoverLeaderboardEntry:
+      type: object
+      properties:
+        mover:
+          $ref: '#/components/schemas/MoverOutput'
+        completedMissions:
+          type: integer
+          description: Number of missions completed (ended) by this mover
+
+    LeaderboardResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MoverLeaderboardEntry'
+        total:
+          type: integer
+          description: Total number of movers with completed missions
+        page:
+          type: integer
+          description: Current page (1-based)
+        limit:
+          type: integer
+          description: Page size
+        totalPages:
+          type: integer
+          description: Total number of pages
+
+    ValidationError:
+      type: object
+      description: Zod validation error (matches InvalidRequestError)
+      properties:
+        type:
+          type: string
+          example: E_INVALID_REQUEST
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ZodIssue'
+
+    ZodIssue:
+      type: object
+      description: Zod validation issue
+      properties:
+        code:
+          type: string
+        path:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+        message:
+          type: string
